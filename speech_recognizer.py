@@ -31,22 +31,17 @@ class SpeechRecognizer(QObject):
         self.is_listening = False
         self.listen_thread = None
         
-        # 识别引擎配置（按优先级排序）
+        # 识别引擎配置 (移除 'Sphinx' 离线备用)
         self.recognition_engines = [
-            {
-                'name': 'Baidu',
-                'method': self._recognize_baidu,
-                'description': '百度语音识别'
-            },
             {
                 'name': 'Google',
                 'method': self._recognize_google,
                 'description': 'Google语音识别'
             },
             {
-                'name': 'Sphinx',
-                'method': self._recognize_sphinx,
-                'description': '离线语音识别'
+                'name': 'Baidu',
+                'method': self._recognize_baidu,
+                'description': '百度语音识别'
             }
         ]
         
@@ -56,22 +51,6 @@ class SpeechRecognizer(QObject):
             return
         
         try:
-            # 尝试使用默认麦克风，如果失败则尝试其他设备
-            try:
-                self.microphone = sr.Microphone()
-            except Exception as e1:
-                # 如果默认麦克风失败，尝试使用 Realtek 麦克风 (设备 23)
-                try:
-                    self.microphone = sr.Microphone(device_index=23)
-                except Exception as e2:
-                    # 如果还是失败，尝试 Microsoft Sound Mapper (设备 0)
-                    try:
-                        self.microphone = sr.Microphone(device_index=0)
-                    except Exception as e3:
-                        # 所有麦克风设备都失败，给出详细提示
-                        self._handle_microphone_error(e1, e2, e3)
-                        return
-            
             # 调整识别器参数
             self.recognizer.energy_threshold = 1000  # 噪声阈值
             self.recognizer.dynamic_energy_threshold = True
@@ -85,8 +64,8 @@ class SpeechRecognizer(QObject):
             # 初始化麦克风
             self._initialize_microphone()
         except Exception as e:
-            self.error_occurred.emit(f"麦克风初始化失败: {str(e)}")
-            return
+            self.error_occurred.emit(f"语音识别器初始化错误: {str(e)}")
+            self.microphone = None
     
     def _recognize_baidu(self, audio):
         """百度语音识别"""
@@ -106,12 +85,8 @@ class SpeechRecognizer(QObject):
             raise Exception(f"Google识别失败: {str(e)}")
     
     def _recognize_sphinx(self, audio):
-        """离线语音识别"""
-        try:
-            # 使用离线识别，但对中文支持不够好
-            return self.recognizer.recognize_sphinx(audio, language='zh-CN')
-        except Exception as e:
-            raise Exception(f"离线识别失败: {str(e)}")
+        """离线语音识别 (已禁用)"""
+        raise Exception("离线识别功能已被禁用。")
     
     def _recognize_audio(self, audio):
         """
@@ -159,13 +134,42 @@ class SpeechRecognizer(QObject):
         self.error_occurred.emit(error_msg)
 
     def _initialize_microphone(self):
-        """初始化麦克风"""
+        """初始化麦克风，并提供设备列表"""
         try:
-            with self.microphone as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=1)
-            self.status_changed.emit("麦克风已连接，可以开始语音识别")
+            mic_list = sr.Microphone.list_microphone_names()
+            if not mic_list:
+                self.error_occurred.emit("未检测到任何麦克风设备！")
+                self.microphone = None
+                return
+
+            # 尝试使用默认麦克风
+            try:
+                self.microphone = sr.Microphone()
+                with self.microphone as source:
+                    self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                self.status_changed.emit("默认麦克风已就绪")
+                return
+            except Exception as e:
+                print(f"默认麦克风失败: {e}。尝试其他设备...")
+
+            # 如果默认失败，遍历所有设备
+            for i, mic_name in enumerate(mic_list):
+                try:
+                    self.microphone = sr.Microphone(device_index=i)
+                    with self.microphone as source:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                    self.status_changed.emit(f"使用麦克风: {mic_name}")
+                    return # 找到一个可用的就退出
+                except Exception:
+                    continue # 失败了就尝试下一个
+            
+            # 如果所有设备都失败了
+            self.error_occurred.emit("所有麦克风设备均初始化失败。")
+            self.microphone = None
+
         except Exception as e:
-            self.error_occurred.emit(f"麦克风初始化失败: {str(e)}")
+            self.error_occurred.emit(f"麦克风初始化过程中发生未知错误: {str(e)}")
+            self.microphone = None
     
     def _add_punctuation(self, text, pause_duration=0):
         """
@@ -250,6 +254,12 @@ class SpeechRecognizer(QObject):
         
         while self.is_listening:
             try:
+                # 增加麦克风有效性检查
+                if not self.microphone:
+                    self.error_occurred.emit("错误: 麦克风未初始化。")
+                    self.is_listening = False
+                    break
+
                 start_time = time.time()
                 
                 with self.microphone as source:

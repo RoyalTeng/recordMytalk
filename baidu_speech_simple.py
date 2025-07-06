@@ -44,23 +44,42 @@ class BaiduSpeechSimple(QObject):
         self.sentence_keywords = ["什么", "怎么", "为什么", "哪里", "谁", "吗", "呢", "如何", "多少"]
     
     def _init_microphone(self):
-        """初始化麦克风"""
+        """初始化麦克风，并提供设备列表"""
         try:
-            # 尝试多种麦克风设备
+            mic_list = sr.Microphone.list_microphone_names()
+            if not mic_list:
+                self.error_occurred.emit("未检测到任何麦克风设备！")
+                self.microphone = None
+                return
+
+            # 尝试使用默认麦克风
             try:
                 self.microphone = sr.Microphone()
-            except Exception as e1:
+                with self.microphone as source:
+                    self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                self.status_changed.emit("默认麦克风已就绪")
+                return
+            except Exception as e:
+                print(f"默认麦克风失败: {e}。尝试其他设备...")
+
+            # 如果默认失败，遍历所有设备
+            for i, mic_name in enumerate(mic_list):
                 try:
-                    self.microphone = sr.Microphone(device_index=0)
-                except Exception as e2:
-                    self.error_occurred.emit(f"麦克风初始化失败: {str(e1)}")
-                    return
+                    self.microphone = sr.Microphone(device_index=i)
+                    with self.microphone as source:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                    self.status_changed.emit(f"使用麦克风: {mic_name}")
+                    return # 找到一个可用的就退出
+                except Exception:
+                    continue # 失败了就尝试下一个
             
-            with self.microphone as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=1)
-            self.status_changed.emit("百度语音识别已就绪")
+            # 如果所有设备都失败了
+            self.error_occurred.emit("所有麦克风设备均初始化失败。")
+            self.microphone = None
+
         except Exception as e:
-            self.error_occurred.emit(f"麦克风初始化失败: {str(e)}")
+            self.error_occurred.emit(f"麦克风初始化过程中发生未知错误: {str(e)}")
+            self.microphone = None
     
     def _setup_recognizer(self):
         """设置识别器参数"""
@@ -133,7 +152,7 @@ class BaiduSpeechSimple(QObject):
     def stop_listening(self):
         """停止监听"""
         self.is_listening = False
-        if self.listen_thread:
+        if self.listen_thread and self.listen_thread.is_alive():
             self.listen_thread.join(timeout=1)
         self.status_changed.emit("停止监听")
     
@@ -143,6 +162,12 @@ class BaiduSpeechSimple(QObject):
         
         while self.is_listening:
             try:
+                # 增加麦克风有效性检查
+                if not self.microphone:
+                    self.error_occurred.emit("错误: 麦克风未初始化。")
+                    self.is_listening = False
+                    break
+
                 with self.microphone as source:
                     self.status_changed.emit("请说话...")
                     audio = self.recognizer.listen(source, timeout=10, phrase_time_limit=30)
