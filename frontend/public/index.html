@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#00c756" />
+    <meta name="description" content="极简语音转文字桌面插件" />
+    
+    <title>语音助手 - 语音转文字</title>
+    
+    <!-- 预加载关键字体 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- 防止Flash of Unstyled Content -->
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+          'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      }
+      
+      #root {
+        height: 100%;
+        width: 100%;
+      }
+      
+      /* 加载动画 */
+      .loading-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        z-index: 9999;
+      }
+      
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #e5e7eb;
+        border-top: 3px solid #00c756;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>您需要启用JavaScript来运行此应用。</noscript>
+    
+    <!-- 加载动画 -->
+    <div id="loading" class="loading-container">
+      <div class="loading-spinner"></div>
+    </div>
+    
+    <div id="root"></div>
+    
+    <!-- 隐藏加载动画的脚本 -->
+    <script>
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          const loading = document.getElementById('loading');
+          if (loading) {
+            loading.style.opacity = '0';
+            loading.style.transition = 'opacity 0.3s ease';
+            setTimeout(() => loading.remove(), 300);
+          }
+        }, 500);
+      });
+      
+      // 为Python WebView提供接口
+      window.speechToTextAPI = {
+        // 接收来自Python的消息
+        onTextRecognized: function(text) {
+          window.dispatchEvent(new CustomEvent('pythonMessage', {
+            detail: { type: 'text_recognized', data: text }
+          }));
+        },
+        
+        onStatusChanged: function(status) {
+          window.dispatchEvent(new CustomEvent('pythonMessage', {
+            detail: { type: 'status_changed', data: status }
+          }));
+        },
+        
+        onErrorOccurred: function(error) {
+          window.dispatchEvent(new CustomEvent('pythonMessage', {
+            detail: { type: 'error_occurred', data: error }
+          }));
+        }
+      };
+    </script>
+  </body>
+</html> 
