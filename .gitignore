@@ -33,6 +33,7 @@ ENV/
 env/
 .venv/
 clean_env/
+.venv_clean/
 
 # IDE
 .vscode/
