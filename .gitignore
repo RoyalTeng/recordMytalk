@@ -26,13 +26,13 @@ MANIFEST
 
 # PyInstaller
 *.manifest
-*.spec
 
 # 虚拟环境
 venv/
 ENV/
 env/
 .venv/
+clean_env/
 
 # IDE
 .vscode/
